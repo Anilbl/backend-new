@@ -12,6 +12,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder; // Add this
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,25 +23,37 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final EmployeeRepository employeeRepository;
     private final JwtUtils jwtUtils;
+    private final PasswordEncoder passwordEncoder; // Add this
 
     public AuthServiceImpl(AuthenticationManager authenticationManager,
                            UserRepository userRepository,
                            EmployeeRepository employeeRepository,
-                           JwtUtils jwtUtils) {
+                           JwtUtils jwtUtils,
+                           PasswordEncoder passwordEncoder) { // Add this to constructor
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.employeeRepository = employeeRepository;
         this.jwtUtils = jwtUtils;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     @Transactional(readOnly = true)
     public LoginResponseDTO authenticateUser(LoginRequestDTO request) {
-        String inputUsername = request.getUsername().trim();
+        String inputUsername = request.getUsername();
 
-        // 1. Pre-fetch user to check state if auth fails
+        // 1. Fetch user
         User user = userRepository.findByUsername(inputUsername)
                 .orElseThrow(() -> new RuntimeException("User not found: " + inputUsername));
+
+        // --- START DEBUG BLOCK ---
+        System.out.println("DEBUG: Attempting login for user: " + inputUsername);
+        System.out.println("DEBUG: Raw Password from UI: " + request.getPassword());
+        System.out.println("DEBUG: Encoded Password from DB: " + user.getPassword());
+
+        boolean manualMatch = passwordEncoder.matches(request.getPassword(), user.getPassword());
+        System.out.println("DEBUG: Does BCrypt match? " + manualMatch);
+        // --- END DEBUG BLOCK ---
 
         try {
             // 2. Attempt Authentication
@@ -49,13 +62,11 @@ public class AuthServiceImpl implements AuthService {
             );
         } catch (BadCredentialsException e) {
             if (user.isFirstLogin()) {
-                throw new RuntimeException("Initial setup required. Please use the temporary password sent to your email.");
+                throw new RuntimeException("Initial setup required. Please use temporary password.");
             }
             throw new RuntimeException("Incorrect password for user: " + inputUsername);
         } catch (AuthenticationException e) {
-            if (!user.isFirstLogin()) {
-                throw new RuntimeException("Authentication failed for '" + inputUsername + "'. Account may be inactive.");
-            }
+            throw new RuntimeException("Authentication failed for '" + inputUsername + "'.");
         }
 
         // 3. Fetch linked Employee profile
@@ -71,8 +82,6 @@ public class AuthServiceImpl implements AuthService {
         // 5. Generate Token
         String token = jwtUtils.generateToken(user.getUsername(), roleName);
 
-        // 6. Return DTO with all permission flags included
-        // Mapping boolean flags directly from the User entity to the DTO
         return new LoginResponseDTO(
                 user.getUserId(),
                 employee.getEmpId(),
@@ -81,9 +90,9 @@ public class AuthServiceImpl implements AuthService {
                 roleName,
                 token,
                 user.isFirstLogin(),
-                user.isAdmin(),           // Flag for Admin Portal
-                user.isAccountant(),      // Flag for Accountant Portal
-                user.isHasEmployeeRole()  // Flag for Employee Portal
+                user.isAdmin(),
+                user.isAccountant(),
+                user.isHasEmployeeRole()
         );
     }
 }

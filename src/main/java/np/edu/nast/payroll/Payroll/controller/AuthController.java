@@ -31,8 +31,15 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponseDTO> login(@RequestBody LoginRequestDTO request) {
-        // This 'request' object contains the username (e.g., 'virat kohli') sent from React
+        // DEBUG LOGS: Check your IntelliJ console to see these!
+        System.out.println("=== LOGIN ATTEMPT ===");
+        System.out.println("Username Received: " + request.getUsername());
+        // Do not log actual passwords in production, but for debugging:
+        System.out.println("Password Length: " + (request.getPassword() != null ? request.getPassword().length() : "NULL"));
+
         LoginResponseDTO response = authService.authenticateUser(request);
+
+        System.out.println("Login Success for: " + request.getUsername());
         return ResponseEntity.ok(response);
     }
 
