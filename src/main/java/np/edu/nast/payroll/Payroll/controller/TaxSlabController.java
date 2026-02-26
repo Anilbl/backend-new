@@ -17,14 +17,19 @@ public class TaxSlabController {
         this.service = service;
     }
 
+    // UPDATED: Accepts userId as a Query Parameter from the frontend
     @PostMapping
-    public TaxSlab create(@RequestBody TaxSlab slab) {
-        return service.create(slab);
+    public TaxSlab create(@RequestBody TaxSlab slab, @RequestParam Integer userId) {
+        return service.create(slab, userId);
     }
 
+    // UPDATED: Accepts userId as a Query Parameter for tracking the editor
     @PutMapping("/{id}")
-    public TaxSlab update(@PathVariable Integer id, @RequestBody TaxSlab slab) {
-        return service.update(id, slab);
+    public TaxSlab update(
+            @PathVariable Integer id,
+            @RequestBody TaxSlab slab,
+            @RequestParam Integer userId) {
+        return service.update(id, slab, userId);
     }
 
     @DeleteMapping("/{id}")

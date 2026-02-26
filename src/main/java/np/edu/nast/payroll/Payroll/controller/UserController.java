@@ -94,8 +94,18 @@ public class UserController {
     }
 
     @GetMapping
-    public List<User> getAllUsers() {
+    public List<User> getUsers() {
+        // Make sure this calls service.getAll() which filters isActive = true
         return userService.getAll();
+    }
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteUser(@PathVariable Integer id) {
+        try {
+            userService.delete(id);
+            return ResponseEntity.ok("User and associated profile deactivated successfully.");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        }
     }
 
     @PostMapping

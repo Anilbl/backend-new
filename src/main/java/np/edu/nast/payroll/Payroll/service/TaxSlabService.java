@@ -5,10 +5,10 @@ import java.util.List;
 
 public interface TaxSlabService {
 
-    // Use Integer to match the taxSlabId type in the TaxSlab entity
-    TaxSlab create(TaxSlab slab);
+    // Cleaned up: Only keep the methods that accept userId for auditing
+    TaxSlab create(TaxSlab slab, Integer userId);
 
-    TaxSlab update(Integer id, TaxSlab slab);
+    TaxSlab update(Integer id, TaxSlab slab, Integer userId);
 
     void delete(Integer id);
 

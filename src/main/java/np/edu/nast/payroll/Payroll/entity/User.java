@@ -32,7 +32,6 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    // Primary Role (Sent from Frontend)
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     @JsonIgnoreProperties("users")
@@ -40,7 +39,7 @@ public class User {
 
     private String status;
 
-    @OneToOne(mappedBy = "user")
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL) // Cascade ensures changes reach Employee
     @JsonIgnore
     private Employee employee;
 
@@ -56,9 +55,12 @@ public class User {
     @JsonIgnore
     private LocalDateTime tokenExpiry;
 
-    // 🔥 AUTOMATED MULTI-ROLE FLAGS
+    // --- SOFT DELETE FLAG (UPDATED) ---
+    @Column(name = "is_active", nullable = false) // Mapped to snake_case
+    private Boolean isActive;
+
     @Column(name = "is_admin")
-    private boolean isAdmin =false;
+    private boolean isAdmin = false;
 
     @Column(name = "is_accountant")
     private boolean isAccountant = false;
@@ -71,15 +73,22 @@ public class User {
 
     /**
      * Logic to automatically set boolean flags based on the selected Role.
-     * Triggers before Saving (Persist) and before Updating.
+     * Also ensures isActive and createdAt are initialized correctly.
      */
     @PrePersist
     @PreUpdate
     public void syncRoleFlagsAndTimestamp() {
+        // Initialize timestamp
         if (this.createdAt == null) {
             this.createdAt = LocalDateTime.now();
         }
 
+        // Initialize Soft Delete flag if null
+        if (this.isActive == null) {
+            this.isActive = true;
+        }
+
+        // Logic for role flags
         if (this.role != null && this.role.getRoleName() != null) {
             String roleName = this.role.getRoleName().toUpperCase();
 

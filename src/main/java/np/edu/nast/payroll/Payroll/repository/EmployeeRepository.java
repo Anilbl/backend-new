@@ -12,6 +12,11 @@ import java.util.Optional;
 @Repository
 public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
+    // Add this line to resolve the error
+    List<Employee> findByIsActiveTrue();
+    // Custom query to only fetch active employees
+    @Query("SELECT e FROM Employee e WHERE e.isActive = true")
+    List<Employee> findAllActive();
     /**
      * Analytical query for employee growth chart.
      */

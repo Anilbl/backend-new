@@ -1,5 +1,6 @@
 package np.edu.nast.payroll.Payroll.service.impl;
 
+import lombok.RequiredArgsConstructor;
 import np.edu.nast.payroll.Payroll.entity.*;
 import np.edu.nast.payroll.Payroll.reportdto.AttendanceSummaryDTO;
 import np.edu.nast.payroll.Payroll.repository.*;
@@ -42,6 +43,34 @@ public class EmployeeServiceImpl implements EmployeeService {
         this.bankAccountRepo = bankAccountRepo;
     }
 
+    // --- SOFT DELETE IMPLEMENTATION ---
+
+    @Override
+    public void delete(Integer id) {
+        // Find the employee
+        Employee employee = employeeRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
+
+        // SOFT DELETE: Update the flag instead of removing the record
+        employee.setIsActive(false);
+
+        // Also deactivate the associated User account if it exists
+        if (employee.getUser() != null) {
+            employee.getUser().setIsActive(false);
+            userRepo.save(employee.getUser());
+
+        }
+
+        employeeRepo.save(employee);
+    }
+
+    @Override
+    public List<Employee> getAll() {
+        // Return only employees where is_active = true
+        // Note: Ensure you have findByIsActiveTrue() or similar in your EmployeeRepository
+        return employeeRepo.findByIsActiveTrue();
+    }
+
     // --- NEW SETTINGS FEATURES IMPLEMENTATION ---
 
     @Override
@@ -50,19 +79,15 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
 
         try {
-            // Define physical folder on server disk
             String uploadDir = "uploads/photos/";
             File dir = new File(uploadDir);
             if (!dir.exists()) dir.mkdirs();
 
-            // Generate unique filename to avoid browser caching issues
             String fileName = "emp_" + empId + "_" + System.currentTimeMillis() + ".jpg";
             Path path = Paths.get(uploadDir + fileName);
 
-            // Save file
             Files.copy(file.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
 
-            // URL that the frontend uses (Matches SecurityConfig and WebConfig)
             String photoUrl = "http://localhost:8080/photos/" + fileName;
             emp.setPhotoUrl(photoUrl);
             employeeRepo.save(emp);
@@ -89,8 +114,6 @@ public class EmployeeServiceImpl implements EmployeeService {
         User user = emp.getUser();
         if (user == null) throw new ResourceNotFoundException("No associated user account found");
 
-        // Simple check for NoOpPasswordEncoder logic.
-        // If you switch to BCrypt later, use passwordEncoder.matches()
         if (!user.getPassword().equals(currentPassword)) {
             throw new RuntimeException("The current password you entered is incorrect.");
         }
@@ -99,7 +122,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         userRepo.save(user);
     }
 
-    // --- EXISTING LOGIC PRESERVED BELOW ---
+    // --- EXISTING LOGIC ---
 
     @Override
     public Employee getByUserId(Integer userId) {
@@ -247,9 +270,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setPosition(desig);
     }
 
-    @Override public void delete(Integer id) { employeeRepo.deleteById(id); }
     @Override public Employee getById(Integer id) { return employeeRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Not found")); }
-    @Override public List<Employee> getAll() { return employeeRepo.findAll(); }
 
     @Override
     public Map<Integer, Long> getActiveEmployeeStats() {
