@@ -1,14 +1,17 @@
 package np.edu.nast.payroll.Payroll.service.impl;
 
-import lombok.RequiredArgsConstructor;
+import np.edu.nast.payroll.Payroll.dto.PasswordChangeDTO;
 import np.edu.nast.payroll.Payroll.entity.*;
 import np.edu.nast.payroll.Payroll.reportdto.AttendanceSummaryDTO;
 import np.edu.nast.payroll.Payroll.repository.*;
 import np.edu.nast.payroll.Payroll.service.EmployeeService;
 import np.edu.nast.payroll.Payroll.exception.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
@@ -27,6 +30,9 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final BankRepository bankRepo;
     private final BankAccountRepository bankAccountRepo;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     public EmployeeServiceImpl(EmployeeRepository employeeRepo,
                                DepartmentRepository departmentRepo,
                                DesignationRepository designationRepo,
@@ -43,35 +49,102 @@ public class EmployeeServiceImpl implements EmployeeService {
         this.bankAccountRepo = bankAccountRepo;
     }
 
-    // --- SOFT DELETE IMPLEMENTATION ---
+    // --- CORE CRUD OPERATIONS ---
+
+    @Override
+    public Employee create(Employee employee) {
+        if (employeeRepo.existsByEmail(employee.getEmail())) {
+            throw new EmailAlreadyExistsException("Email exists: " + employee.getEmail());
+        }
+        User associatedUser = userRepo.findByEmailIgnoreCase(employee.getEmail())
+                .orElseThrow(() -> new ResourceNotFoundException("No user found with email: " + employee.getEmail()));
+
+        if (employeeRepo.findByUser_UserId(associatedUser.getUserId()).isPresent()) {
+            throw new RuntimeException("This user is already registered as an employee.");
+        }
+
+        employee.setUser(associatedUser);
+        validateAndAttachForeignKeys(employee);
+
+        List<BankAccount> incomingBankAccounts = employee.getBankAccount();
+        employee.setBankAccount(null);
+
+        Employee savedEmployee = employeeRepo.save(employee);
+
+        if (incomingBankAccounts != null && !incomingBankAccounts.isEmpty()) {
+            saveBankAccount(savedEmployee, incomingBankAccounts.get(0));
+        }
+        return savedEmployee;
+    }
+
+    @Override
+    public Employee update(Integer id, Employee employee) {
+        Employee existing = employeeRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
+
+        if (employee.getEmail() != null && !employee.getEmail().equalsIgnoreCase(existing.getEmail())) {
+            if (employeeRepo.existsByEmail(employee.getEmail())) throw new EmailAlreadyExistsException("Email exists");
+            User newUser = userRepo.findByEmailIgnoreCase(employee.getEmail())
+                    .orElseThrow(() -> new ResourceNotFoundException("No User found"));
+            existing.setUser(newUser);
+            existing.setEmail(employee.getEmail());
+        }
+
+        validateAndAttachForeignKeys(employee);
+
+        // Updated mapping for new fields
+        existing.setFirstName(employee.getFirstName());
+        existing.setMiddleName(employee.getMiddleName()); // NEW
+        existing.setLastName(employee.getLastName());
+        existing.setGender(employee.getGender());         // NEW
+
+        // Existing fields mapping
+        existing.setContact(employee.getContact());
+        existing.setMaritalStatus(employee.getMaritalStatus());
+        existing.setEducation(employee.getEducation());
+        existing.setEmploymentStatus(employee.getEmploymentStatus());
+        existing.setJoiningDate(employee.getJoiningDate());
+        existing.setAddress(employee.getAddress());
+        existing.setIsActive(employee.getIsActive());
+        existing.setBasicSalary(employee.getBasicSalary());
+        existing.setDepartment(employee.getDepartment());
+        existing.setPosition(employee.getPosition());
+        existing.setPayGroup(employee.getPayGroup());
+
+        if (existing.getUser() != null) existing.getUser().setEmail(existing.getEmail());
+
+        if (employee.getBankAccount() != null && !employee.getBankAccount().isEmpty()) {
+            saveBankAccount(existing, employee.getBankAccount().get(0));
+        }
+        return employeeRepo.save(existing);
+    }
 
     @Override
     public void delete(Integer id) {
-        // Find the employee
         Employee employee = employeeRepo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
 
-        // SOFT DELETE: Update the flag instead of removing the record
+        // SOFT DELETE logic
         employee.setIsActive(false);
-
-        // Also deactivate the associated User account if it exists
         if (employee.getUser() != null) {
             employee.getUser().setIsActive(false);
             userRepo.save(employee.getUser());
-
         }
-
         employeeRepo.save(employee);
     }
 
     @Override
     public List<Employee> getAll() {
-        // Return only employees where is_active = true
-        // Note: Ensure you have findByIsActiveTrue() or similar in your EmployeeRepository
         return employeeRepo.findByIsActiveTrue();
     }
 
-    // --- NEW SETTINGS FEATURES IMPLEMENTATION ---
+    @Override
+    public Employee getById(Integer id) {
+        return employeeRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
+    }
+
+    // --- SETTINGS & PROFILE FEATURES ---
 
     @Override
     public String updateProfilePhoto(Integer empId, MultipartFile file) {
@@ -99,10 +172,10 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
-    public void updateEmailPreference(Integer empId, Boolean preference) {
-        Employee emp = employeeRepo.findById(empId)
+    public void updateEmailPreference(Integer id, Boolean emailNotifications) {
+        Employee emp = employeeRepo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
-        emp.setEmailNotifications(preference);
+        emp.setEmailNotifications(emailNotifications);
         employeeRepo.save(emp);
     }
 
@@ -114,15 +187,28 @@ public class EmployeeServiceImpl implements EmployeeService {
         User user = emp.getUser();
         if (user == null) throw new ResourceNotFoundException("No associated user account found");
 
-        if (!user.getPassword().equals(currentPassword)) {
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new RuntimeException("The current password you entered is incorrect.");
         }
 
-        user.setPassword(newPassword);
+        user.setPassword(passwordEncoder.encode(newPassword));
         userRepo.save(user);
     }
 
-    // --- EXISTING LOGIC ---
+    @Override
+    public void changePassword(Integer id, PasswordChangeDTO dto) {
+        updatePassword(id, dto.getCurrentPassword(), dto.getNewPassword());
+    }
+
+    @Override
+    public void updatePhotoUrl(Integer id, String photoUrl) {
+        Employee emp = employeeRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
+        emp.setPhotoUrl(photoUrl);
+        employeeRepo.save(emp);
+    }
+
+    // --- QUERIES & STATS ---
 
     @Override
     public Employee getByUserId(Integer userId) {
@@ -133,9 +219,16 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
+    public Employee getByEmail(String email) {
+        return employeeRepo.findByUser_Email(email)
+                .or(() -> employeeRepo.findByEmail(email))
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with email: " + email));
+    }
+
+    @Override
     public Map<String, Object> getDashboardStats(Integer id) {
         Employee emp = employeeRepo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
 
         LocalDate now = LocalDate.now();
         List<Object[]> summaryResult = attendanceRepo.summary(now.getYear(), now.getMonthValue());
@@ -156,104 +249,16 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
-    public Employee getByEmail(String email) {
-        return employeeRepo.findByUser_Email(email)
-                .or(() -> employeeRepo.findByEmail(email))
-                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with email: " + email));
+    public Map<Integer, Long> getActiveEmployeeStats() {
+        List<Object[]> result = employeeRepo.countActiveEmployeesPerMonth();
+        Map<Integer, Long> stats = new HashMap<>();
+        for (Object[] row : result) {
+            stats.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        }
+        return stats;
     }
 
-    @Override
-    public Employee create(Employee employee) {
-        if (employeeRepo.existsByEmail(employee.getEmail())) {
-            throw new EmailAlreadyExistsException("Email exists: " + employee.getEmail());
-        }
-        User associatedUser = userRepo.findByEmailIgnoreCase(employee.getEmail())
-                .orElseThrow(() -> new ResourceNotFoundException("No user found with email: " + employee.getEmail()));
-
-        if (employeeRepo.findByUser_UserId(associatedUser.getUserId()).isPresent()) {
-            throw new RuntimeException("This user is already registered as an employee.");
-        }
-
-        employee.setUser(associatedUser);
-        validateAndAttachForeignKeys(employee);
-
-        List<BankAccount> incomingBankAccounts = employee.getBankAccount();
-        employee.setBankAccount(null);
-
-        Employee savedEmployee = employeeRepo.save(employee);
-
-        if (incomingBankAccounts != null && !incomingBankAccounts.isEmpty()) {
-            BankAccount bankDetails = incomingBankAccounts.get(0);
-            if (bankDetails.getBank() != null && bankDetails.getAccountNumber() != null) {
-                Bank bank = bankRepo.findById(bankDetails.getBank().getBankId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Bank not found"));
-
-                BankAccount newAcc = new BankAccount();
-                newAcc.setEmployee(savedEmployee);
-                newAcc.setBank(bank);
-                newAcc.setAccountNumber(bankDetails.getAccountNumber());
-                newAcc.setAccountType(bankDetails.getAccountType());
-                newAcc.setCurrency(bankDetails.getCurrency());
-                newAcc.setIsPrimary(true);
-
-                bankAccountRepo.save(newAcc);
-                savedEmployee.setBankAccount(Collections.singletonList(newAcc));
-            }
-        }
-        return savedEmployee;
-    }
-
-    @Override
-    public Employee update(Integer id, Employee employee) {
-        Employee existing = employeeRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
-
-        if (employee.getEmail() != null && !employee.getEmail().equalsIgnoreCase(existing.getEmail())) {
-            if (employeeRepo.existsByEmail(employee.getEmail())) throw new EmailAlreadyExistsException("Email exists");
-            User newUser = userRepo.findByEmailIgnoreCase(employee.getEmail())
-                    .orElseThrow(() -> new ResourceNotFoundException("No User found"));
-            existing.setUser(newUser);
-            existing.setEmail(employee.getEmail());
-        }
-
-        validateAndAttachForeignKeys(employee);
-
-        existing.setFirstName(employee.getFirstName());
-        existing.setLastName(employee.getLastName());
-        existing.setContact(employee.getContact());
-        existing.setMaritalStatus(employee.getMaritalStatus());
-        existing.setEducation(employee.getEducation());
-        existing.setEmploymentStatus(employee.getEmploymentStatus());
-        existing.setJoiningDate(employee.getJoiningDate());
-        existing.setAddress(employee.getAddress());
-        existing.setIsActive(employee.getIsActive());
-        existing.setBasicSalary(employee.getBasicSalary());
-        existing.setDepartment(employee.getDepartment());
-        existing.setPosition(employee.getPosition());
-        existing.setPayGroup(employee.getPayGroup());
-
-        if (existing.getUser() != null) existing.getUser().setEmail(existing.getEmail());
-
-        if (employee.getBankAccount() != null && !employee.getBankAccount().isEmpty()) {
-            BankAccount incomingBa = employee.getBankAccount().get(0);
-            BankAccount existingBa = bankAccountRepo.findByEmployeeEmpId(id).stream()
-                    .filter(BankAccount::getIsPrimary)
-                    .findFirst()
-                    .orElse(new BankAccount());
-
-            if (incomingBa.getBank() != null && incomingBa.getAccountNumber() != null) {
-                Bank bank = bankRepo.findById(incomingBa.getBank().getBankId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Bank not found"));
-                existingBa.setEmployee(existing);
-                existingBa.setBank(bank);
-                existingBa.setAccountNumber(incomingBa.getAccountNumber());
-                existingBa.setAccountType(incomingBa.getAccountType());
-                existingBa.setCurrency(incomingBa.getCurrency());
-                existingBa.setIsPrimary(true);
-                bankAccountRepo.save(existingBa);
-            }
-        }
-        return employeeRepo.save(existing);
-    }
+    // --- PRIVATE HELPER METHODS ---
 
     private void validateAndAttachForeignKeys(Employee employee) {
         if (employee.getDepartment() == null || employee.getDepartment().getDeptId() == null)
@@ -270,15 +275,24 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setPosition(desig);
     }
 
-    @Override public Employee getById(Integer id) { return employeeRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Not found")); }
+    private void saveBankAccount(Employee employee, BankAccount incomingBa) {
+        if (incomingBa.getBank() != null && incomingBa.getAccountNumber() != null) {
+            Bank bank = bankRepo.findById(incomingBa.getBank().getBankId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Bank not found"));
 
-    @Override
-    public Map<Integer, Long> getActiveEmployeeStats() {
-        List<Object[]> result = employeeRepo.countActiveEmployeesPerMonth();
-        Map<Integer, Long> stats = new HashMap<>();
-        for (Object[] row : result) {
-            stats.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+            BankAccount accountToSave = bankAccountRepo.findByEmployeeEmpId(employee.getEmpId()).stream()
+                    .filter(BankAccount::getIsPrimary)
+                    .findFirst()
+                    .orElse(new BankAccount());
+
+            accountToSave.setEmployee(employee);
+            accountToSave.setBank(bank);
+            accountToSave.setAccountNumber(incomingBa.getAccountNumber());
+            accountToSave.setAccountType(incomingBa.getAccountType());
+            accountToSave.setCurrency(incomingBa.getCurrency());
+            accountToSave.setIsPrimary(true);
+
+            bankAccountRepo.save(accountToSave);
         }
-        return stats;
     }
 }

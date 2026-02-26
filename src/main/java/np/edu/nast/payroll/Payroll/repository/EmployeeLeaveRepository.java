@@ -42,6 +42,14 @@ public interface EmployeeLeaveRepository extends JpaRepository<EmployeeLeave, In
             @Param("periodEnd") LocalDate periodEnd
     );
 
+    /**
+     * NEW: Checks if an employee is currently on an approved leave.
+     * Logic: startDate <= today AND endDate >= today
+     */
+    boolean existsByEmployee_EmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+            Integer empId, String status, LocalDate todayForStart, LocalDate todayForEnd
+    );
+
     List<EmployeeLeave> findByEmployeeEmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
             Integer empId, String status, LocalDate periodEnd, LocalDate periodStart
     );

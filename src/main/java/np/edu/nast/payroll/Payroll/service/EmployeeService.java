@@ -1,5 +1,6 @@
 package np.edu.nast.payroll.Payroll.service;
 
+import np.edu.nast.payroll.Payroll.dto.PasswordChangeDTO;
 import np.edu.nast.payroll.Payroll.entity.Employee;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -10,6 +11,8 @@ public interface EmployeeService {
     Employee create(Employee employee);
     Employee update(Integer id, Employee employee);
     void delete(Integer id);
+    void changePassword(Integer id, PasswordChangeDTO dto);
+    void updatePhotoUrl(Integer id, String photoUrl);
 
     Employee getById(Integer id);
     Employee getByEmail(String email);

@@ -24,7 +24,7 @@ public class Employee {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "emp_id")
-    @JsonProperty("empId") // Removed @JsonIgnore so the ID can travel between FE and BE
+    @JsonProperty("empId")
     private Integer empId;
 
     @OneToOne(fetch = FetchType.EAGER, optional = true)
@@ -35,8 +35,14 @@ public class Employee {
     @Column(name = "first_name", nullable = false)
     private String firstName;
 
+    @Column(name = "middle_name") // New Column
+    private String middleName;
+
     @Column(name = "last_name", nullable = false)
     private String lastName;
+
+    @Column(name = "gender", nullable = false) // New Column
+    private String gender;
 
     @OneToMany(mappedBy = "employee", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<BankAccount> bankAccount;
@@ -56,7 +62,7 @@ public class Employee {
     @Size(min = 10, max = 10, message = "Contact number must be exactly 10 digits")
     private String contact;
 
-    @Column(name = "marital_status", nullable = false) // Mapped to snake_case
+    @Column(name = "marital_status", nullable = false)
     private String maritalStatus;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = true)
@@ -67,16 +73,16 @@ public class Employee {
     @Column(nullable = false)
     private String education;
 
-    @Column(name = "employment_status", nullable = false) // Mapped to snake_case
+    @Column(name = "employment_status", nullable = false)
     private String employmentStatus;
 
-    @Column(name = "joining_date", nullable = false) // Mapped to snake_case
+    @Column(name = "joining_date", nullable = false)
     private LocalDate joiningDate;
 
     @Column(nullable = false)
     private String address;
 
-    @Column(name = "basic_salary", nullable = false) // Mapped to snake_case
+    @Column(name = "basic_salary", nullable = false)
     private Double basicSalary;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = true)
@@ -84,7 +90,7 @@ public class Employee {
     @JsonIgnoreProperties("employees")
     private Department department;
 
-    @Column(name = "is_active", nullable = false) // Mapped to snake_case
+    @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = true)
@@ -96,8 +102,10 @@ public class Employee {
 
     @Column(name = "email_notifications")
     private Boolean emailNotifications = false;
+
     @Column(name = "photo_url")
     private String photoUrl;
+
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
@@ -105,5 +113,7 @@ public class Employee {
         if (this.maritalStatus == null) this.maritalStatus = "SINGLE";
         if (this.employmentStatus == null) this.employmentStatus = "FULL_TIME";
         if (this.basicSalary == null) this.basicSalary = 0.0;
+        // Default gender if not provided
+        if (this.gender == null) this.gender = "OTHER";
     }
 }

@@ -38,6 +38,17 @@ public class AttendanceServiceImpl implements AttendanceService {
         Employee employee = employeeRepository.findById(empId)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee record not found for ID: " + empId));
 
+        // --- NEW: Leave Status Check ---
+        LocalDate today = LocalDate.now();
+        boolean isOnLeave = employeeLeaveRepository.existsByEmployee_EmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                empId, "Approved", today, today
+        );
+
+        if (isOnLeave) {
+            throw new IllegalArgumentException("You are currently on leave. You cannot check in during your leave period.");
+        }
+        // -------------------------------
+
         Optional<Attendance> lastRecord = attendanceRepository.findTopByEmployee_EmpIdOrderByAttendanceIdDesc(empId);
         if (lastRecord.isPresent()) {
             LocalDateTime lastCheckIn = lastRecord.get().getCheckInTime();
