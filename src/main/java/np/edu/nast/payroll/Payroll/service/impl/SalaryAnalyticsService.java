@@ -48,7 +48,14 @@ public class SalaryAnalyticsService {
 
         if (bank != null && bank.getBank() != null) {
             dto.setBankName(bank.getBank().getBankName());
-            dto.setBankAccount(bank.getAccountNumber());
+
+            // Logic Change: Convert Long account number to String for the DTO
+            if (bank.getAccountNumber() != null) {
+                dto.setBankAccount(String.valueOf(bank.getAccountNumber()));
+            } else {
+                dto.setBankAccount("N/A");
+            }
+
         } else {
             dto.setBankName("N/A");
             dto.setBankAccount("N/A");

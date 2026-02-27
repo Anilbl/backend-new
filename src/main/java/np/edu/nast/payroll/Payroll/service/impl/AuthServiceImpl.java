@@ -12,7 +12,8 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.crypto.password.PasswordEncoder; // Add this
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,13 +24,13 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final EmployeeRepository employeeRepository;
     private final JwtUtils jwtUtils;
-    private final PasswordEncoder passwordEncoder; // Add this
+    private final PasswordEncoder passwordEncoder;
 
     public AuthServiceImpl(AuthenticationManager authenticationManager,
                            UserRepository userRepository,
                            EmployeeRepository employeeRepository,
                            JwtUtils jwtUtils,
-                           PasswordEncoder passwordEncoder) { // Add this to constructor
+                           PasswordEncoder passwordEncoder) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.employeeRepository = employeeRepository;
@@ -42,21 +43,18 @@ public class AuthServiceImpl implements AuthService {
     public LoginResponseDTO authenticateUser(LoginRequestDTO request) {
         String inputUsername = request.getUsername();
 
-        // 1. Fetch user
+        // 1. Fetch user (Check if they exist at all)
         User user = userRepository.findByUsername(inputUsername)
                 .orElseThrow(() -> new RuntimeException("User not found: " + inputUsername));
 
-        // --- START DEBUG BLOCK ---
-        System.out.println("DEBUG: Attempting login for user: " + inputUsername);
-        System.out.println("DEBUG: Raw Password from UI: " + request.getPassword());
-        System.out.println("DEBUG: Encoded Password from DB: " + user.getPassword());
-
-        boolean manualMatch = passwordEncoder.matches(request.getPassword(), user.getPassword());
-        System.out.println("DEBUG: Does BCrypt match? " + manualMatch);
-        // --- END DEBUG BLOCK ---
+        // 2. CHECK IF USER IS ACTIVE
+        // If the account is soft-deleted/inactive, block login immediately.
+        if (user.getIsActive() != null && !user.getIsActive()) {
+            throw new RuntimeException("Account is inactive. Please contact the administrator.");
+        }
 
         try {
-            // 2. Attempt Authentication
+            // 3. Attempt Authentication (Password check)
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(inputUsername, request.getPassword())
             );
@@ -69,17 +67,17 @@ public class AuthServiceImpl implements AuthService {
             throw new RuntimeException("Authentication failed for '" + inputUsername + "'.");
         }
 
-        // 3. Fetch linked Employee profile
+        // 4. Fetch linked Employee profile
         Employee employee = employeeRepository.findByEmail(user.getEmail())
                 .orElseThrow(() -> new RuntimeException("No Employee profile linked to: " + user.getEmail()));
 
-        // 4. Role Formatting
+        // 5. Role Formatting
         String roleName = user.getRole().getRoleName().toUpperCase();
         if (!roleName.startsWith("ROLE_")) {
             roleName = "ROLE_" + roleName;
         }
 
-        // 5. Generate Token
+        // 6. Generate Token
         String token = jwtUtils.generateToken(user.getUsername(), roleName);
 
         return new LoginResponseDTO(

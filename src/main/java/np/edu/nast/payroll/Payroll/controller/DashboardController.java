@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/dashboard")
@@ -28,8 +29,8 @@ public class DashboardController {
     private AttendanceRepository attendanceRepository;
 
     /**
-     * UPDATED: Now accepts date parameters to calculate dynamic stats
-     * based on the day selected in the frontend.
+     * UPDATED: Now filters totalWorkforce by isActive = true
+     * and calculates attendance percentage based on active staff.
      */
     @GetMapping("/admin/stats")
     public Map<String, Object> getDashboardStats(
@@ -45,21 +46,22 @@ public class DashboardController {
                     ? LocalDate.of(year, month, day)
                     : now;
 
-            // 2. Fetch data based on the selected date
-            long totalEmployees = employeeRepository.count();
+            // 2. Fetch data: Only count employees where isActive is true
+            long totalActiveEmployees = employeeRepository.countByIsActiveTrue();
             long pendingLeaves = leaveRepository.countByStatus("PENDING");
 
             // Get attendance count for the specific selected date
             long presentOnDate = attendanceRepository.countByAttendanceDate(targetDate);
 
-            // 3. Calculation for the specific day
+            // 3. Calculation based on the ACTIVE workforce
             String attendancePercentage = "0%";
-            if (totalEmployees > 0) {
-                double percentage = ((double) presentOnDate / totalEmployees) * 100;
-                attendancePercentage = Math.round(percentage) + "%";
+            if (totalActiveEmployees > 0) {
+                double percentage = ((double) presentOnDate / totalActiveEmployees) * 100;
+                // Round and cap at 100% to avoid logic errors if data is messy
+                attendancePercentage = Math.min(100, Math.round(percentage)) + "%";
             }
 
-            stats.put("totalWorkforce", totalEmployees);
+            stats.put("totalWorkforce", totalActiveEmployees);
             stats.put("leaveRequests", pendingLeaves);
             stats.put("dailyAttendance", attendancePercentage);
 
@@ -73,7 +75,8 @@ public class DashboardController {
     }
 
     /**
-     * UPDATED: Accept Filters for Day, Month, Year, and Search for the table records.
+     * UPDATED: Fetches attendance and ensures only records for active
+     * employees are returned to the table.
      */
     @GetMapping("/recent-attendance")
     public List<Attendance> getRecentAttendance(
@@ -82,19 +85,24 @@ public class DashboardController {
             @RequestParam(required = false) Integer day,
             @RequestParam(required = false) String search) {
         try {
-            // Default to today if parameters are missing
             LocalDate now = LocalDate.now();
             int filterYear = (year != null) ? year : now.getYear();
             int filterMonth = (month != null) ? month : now.getMonthValue();
             int filterDay = (day != null) ? day : now.getDayOfMonth();
             String filterSearch = (search != null) ? search : "";
 
-            // Uses the custom Query in AttendanceRepository
+            // Fetch filtered list from repository
             List<Attendance> list = attendanceRepository.findFilteredAttendance(
                     filterYear, filterMonth, filterDay, filterSearch
             );
 
-            return (list != null) ? list : new ArrayList<>();
+            if (list == null) return new ArrayList<>();
+
+            // Extra Filter: Ensure we only show attendance for currently active employees
+            return list.stream()
+                    .filter(attendance -> attendance.getEmployee() != null && attendance.getEmployee().getIsActive())
+                    .collect(Collectors.toList());
+
         } catch (Exception e) {
             e.printStackTrace();
             return new ArrayList<>();

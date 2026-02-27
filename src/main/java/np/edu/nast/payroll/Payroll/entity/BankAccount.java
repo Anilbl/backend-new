@@ -30,7 +30,7 @@ public class BankAccount {
     private Bank bank;
 
     @Column(name = "account_number", nullable = false, unique = true)
-    private String accountNumber;
+    private Long accountNumber;
 
     @Column(nullable = false)
     private String accountType; // Savings / Current / Salary

@@ -14,6 +14,8 @@ import java.util.Optional;
 @Repository
 public interface LeaveBalanceRepository extends JpaRepository<LeaveBalance, Integer> {
 
+    @Query("SELECT SUM(b.currentBalanceDays) FROM LeaveBalance b WHERE b.employee.empId = :empId")
+    Integer sumCurrentBalanceByEmployeeId(@Param("empId") Integer empId);
     /**
      * Finds all leave balances for a specific employee.
      * Used to display the "Available Quota" in the Employee Portal.

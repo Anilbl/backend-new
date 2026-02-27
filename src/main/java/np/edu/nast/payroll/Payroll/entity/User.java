@@ -37,8 +37,6 @@ public class User {
     @JsonIgnoreProperties("users")
     private Role role;
 
-    private String status;
-
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL) // Cascade ensures changes reach Employee
     @JsonIgnore
     private Employee employee;

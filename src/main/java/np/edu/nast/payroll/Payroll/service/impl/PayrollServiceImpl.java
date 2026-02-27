@@ -57,13 +57,18 @@ public class PayrollServiceImpl implements PayrollService {
             summary.setPaidCount(0L);
         }
         summary.setDepartments(depts != null ? depts : new ArrayList<>());
-        summary.setTotalEmployees(employeeRepo.count());
+        // Summary count should also technically only reflect active employees
+        summary.setTotalEmployees(employeeRepo.findAll().stream().filter(e -> Boolean.TRUE.equals(e.getIsActive())).count());
         return summary;
     }
 
     @Override
     public List<PayrollDashboardDTO> getBatchCalculation(String month, int year) {
-        List<Employee> employees = employeeRepo.findAll();
+        // Filter: Only include active employees for batch calculation
+        List<Employee> activeEmployees = employeeRepo.findAll().stream()
+                .filter(emp -> Boolean.TRUE.equals(emp.getIsActive()))
+                .toList();
+
         int monthValue = parseMonthValue(month);
         if (monthValue == -1) return new ArrayList<>();
 
@@ -72,7 +77,7 @@ public class PayrollServiceImpl implements PayrollService {
         int totalDaysInMonth = (int) ChronoUnit.DAYS.between(periodStart, periodEnd);
         double holidayCount = countPublicHolidaysInPeriod(periodStart, periodEnd);
 
-        return employees.stream().map(emp -> {
+        return activeEmployees.stream().map(emp -> {
             double physicalDays = countAttendanceDaysInternal(emp.getEmpId(), periodStart, periodEnd);
             double paidLeaveDays = calculatePaidLeaveDaysInternal(emp.getEmpId(), periodStart, periodEnd);
             double saturdays = countSaturdaysInPeriod(periodStart, periodEnd);
@@ -97,7 +102,12 @@ public class PayrollServiceImpl implements PayrollService {
 
     public CommandCenterDTO getCommandCenterData(int month, int year) {
         LocalDate periodStart = LocalDate.of(year, month, 1);
-        List<Employee> allEmployees = employeeRepo.findAll();
+
+        // Filter: Fetch all but stream and filter only active ones for display/processing
+        List<Employee> activeEmployees = employeeRepo.findAll().stream()
+                .filter(emp -> Boolean.TRUE.equals(emp.getIsActive()))
+                .toList();
+
         List<Payroll> dbPayrolls = payrollRepo.findByPayPeriodStart(periodStart);
 
         Map<Integer, Payroll> payrollMap = dbPayrolls.stream()
@@ -108,7 +118,7 @@ public class PayrollServiceImpl implements PayrollService {
         Map<Integer, PayrollDashboardDTO> previewMap = previews.stream()
                 .collect(Collectors.toMap(PayrollDashboardDTO::getEmpId, p -> p));
 
-        List<EmployeePayrollRowDTO> rows = allEmployees.stream().map(emp -> {
+        List<EmployeePayrollRowDTO> rows = activeEmployees.stream().map(emp -> {
             Payroll existing = payrollMap.get(emp.getEmpId());
             PayrollDashboardDTO preview = previewMap.get(emp.getEmpId());
 
@@ -120,7 +130,7 @@ public class PayrollServiceImpl implements PayrollService {
                         .earnedSalary(existing.getBasicSalary())
                         .payrollId(existing.getPayrollId())
                         .festivalBonus(existing.getFestivalBonus())
-                        .otherBonuses(existing.getOtherBonuses())
+                        .bonuses(existing.getOtherBonuses())
                         .citContribution(existing.getCitContribution())
                         .status(existing.getStatus())
                         .build();
@@ -133,7 +143,7 @@ public class PayrollServiceImpl implements PayrollService {
                         .earnedSalary(earned)
                         .payrollId(null)
                         .festivalBonus(0.0)
-                        .otherBonuses(0.0)
+                        .bonuses(0.0)
                         .citContribution(0.0)
                         .status(earned > 0 ? "READY" : "NO_EARNINGS")
                         .build();
@@ -149,7 +159,6 @@ public class PayrollServiceImpl implements PayrollService {
         return dto;
     }
 
-    /* ================= UPDATED PREVIEW CALCULATION ================= */
     @Override
     public Payroll calculatePreview(Map<String, Object> payload) {
         log.info("--- [PAYROLL ENGINE] PROCESSING PREVIEW ---");
@@ -157,6 +166,11 @@ public class PayrollServiceImpl implements PayrollService {
         Integer empId = resolveEmpId(payload);
         Employee employee = employeeRepo.findById(empId)
                 .orElseThrow(() -> new RuntimeException("Employee not found"));
+
+        // Safety check if someone tries to calculate a preview for an inactive employee via API
+        if (Boolean.FALSE.equals(employee.getIsActive())) {
+            throw new RuntimeException("Cannot process payroll for an inactive employee.");
+        }
 
         int year = (payload.get("year") != null) ? Integer.parseInt(payload.get("year").toString()) : LocalDate.now().getYear();
         int monthValue = (payload.get("month") != null) ? parseMonthValue(payload.get("month").toString()) : LocalDate.now().getMonthValue();
@@ -167,35 +181,47 @@ public class PayrollServiceImpl implements PayrollService {
 
         validatePayrollPeriod(empId, periodStart);
 
-        double physicalDays = countAttendanceDaysInternal(empId, periodStart, periodEnd);
-        double paidLeaveDays = calculatePaidLeaveDaysInternal(empId, periodStart, periodEnd);
-        double saturdays = countSaturdaysInPeriod(periodStart, periodEnd);
-        double holidayCount = countPublicHolidaysInPeriod(periodStart, periodEnd);
-        double totalPaidDays = Math.min(totalDaysInMonth, physicalDays + paidLeaveDays + saturdays + holidayCount);
-
         double baseSalaryConfig = (employee.getBasicSalary() != null && employee.getBasicSalary() > 0)
                 ? employee.getBasicSalary() : getFallbackBasicFromComponents();
 
-        double perDayRate = baseSalaryConfig / totalDaysInMonth;
-        double actualBasicEarned = (totalPaidDays >= totalDaysInMonth) ? baseSalaryConfig : round(totalPaidDays * perDayRate);
+        // 1. DETERMINE EARNED SALARY
+        double finalEarnedSalary;
+        if (payload.get("earnedSalary") != null && Double.parseDouble(payload.get("earnedSalary").toString()) > 0) {
+            finalEarnedSalary = Double.parseDouble(payload.get("earnedSalary").toString());
+        } else {
+            double physicalDays = countAttendanceDaysInternal(empId, periodStart, periodEnd);
+            double paidLeaveDays = calculatePaidLeaveDaysInternal(empId, periodStart, periodEnd);
+            double saturdays = countSaturdaysInPeriod(periodStart, periodEnd);
+            double holidayCount = countPublicHolidaysInPeriod(periodStart, periodEnd);
+            double totalPaidDays = Math.min(totalDaysInMonth, physicalDays + paidLeaveDays + saturdays + holidayCount);
 
+            double perDayRate = baseSalaryConfig / totalDaysInMonth;
+            finalEarnedSalary = (totalPaidDays >= totalDaysInMonth) ? baseSalaryConfig : round(totalPaidDays * perDayRate);
+        }
+
+        // 2. SSF LOGIC
         List<SalaryComponent> dbComponents = salaryComponentRepo.findAll();
+        boolean isEnrolled = (employee.getIsSsfEnrolled() != null && employee.getIsSsfEnrolled());
+
+        double ssfContribution = 0.0;
+        if (isEnrolled) {
+            double ssfPercentage = getComponentDefault(dbComponents, "ssf", 11.0);
+            ssfContribution = round(baseSalaryConfig * (ssfPercentage / 100.0));
+        }
+
         double dearnessAmt = getComponentDefault(dbComponents, "Dearness Allowance", 7380.0);
         double hraPercentage = getComponentDefault(dbComponents, "House Rent Allowance", 0.0);
-        double ssfPercentage = getComponentDefault(dbComponents, "ssf", 11.0);
+        double calculatedHra = round(baseSalaryConfig * (hraPercentage / 100.0));
 
-        double earnedHra = round(actualBasicEarned * (hraPercentage / 100.0));
-        double ssfContribution = round(actualBasicEarned * (ssfPercentage / 100.0));
-
-        // CAPTURE MANUAL INPUTS FROM PAYLOAD
+        // 3. CAPTURE OTHER MANUAL INPUTS
         double festivalBonus = parseDouble(payload, "festivalBonus");
-        double otherBonuses = parseDouble(payload, "otherBonuses"); // Match frontend
+        double otherBonuses = payload.containsKey("bonuses") ? parseDouble(payload, "bonuses") : parseDouble(payload, "otherBonuses");
         double citContribution = parseDouble(payload, "citContribution");
 
         Payroll payroll = Payroll.builder()
                 .employee(employee)
                 .payGroup(resolvePayGroup(employee))
-                .basicSalary(round(actualBasicEarned))
+                .basicSalary(round(finalEarnedSalary))
                 .ssfContribution(ssfContribution)
                 .payPeriodStart(periodStart)
                 .payPeriodEnd(periodEnd.minusDays(1))
@@ -203,18 +229,22 @@ public class PayrollServiceImpl implements PayrollService {
                 .extraComponents(new ArrayList<>())
                 .build();
 
-        // ADD COMPONENTS TO LIST SO THEY RENDER IN THE TABLE
-        payroll.addExtraComponent("Basic Salary (Earned)", round(actualBasicEarned), "EARNING", "FIXED", "Attendance");
+        // 4. ADD BREAKDOWN COMPONENTS
+        payroll.addExtraComponent("Basic Salary (Earned)", round(finalEarnedSalary), "EARNING", "FIXED", "Manual/Attendance");
         payroll.addExtraComponent("Dearness Allowance", dearnessAmt, "EARNING", "FIXED", "Config");
-        if (earnedHra > 0) payroll.addExtraComponent("House Rent Allowance", earnedHra, "EARNING", "PERCENTAGE", "Config");
-        payroll.addExtraComponent("SSF (Statutory 11%)", ssfContribution, "DEDUCTION", "PERCENTAGE", "Statutory");
+        if (calculatedHra > 0) payroll.addExtraComponent("House Rent Allowance", calculatedHra, "EARNING", "PERCENTAGE", "Config");
 
-        // Add manual ones if present
+        if (isEnrolled) {
+            payroll.addExtraComponent("SSF (11% Contribution)", ssfContribution, "DEDUCTION", "PERCENTAGE", "Statutory");
+        } else {
+            payroll.addExtraComponent("SSF (Status)", 0.0, "INFO", "FIXED", "Unenrolled - 1% Tax Applies");
+        }
+
         if (festivalBonus > 0) payroll.addExtraComponent("Festival Bonus", festivalBonus, "EARNING", "MANUAL", "Input");
         if (otherBonuses > 0) payroll.addExtraComponent("Other Bonuses", otherBonuses, "EARNING", "MANUAL", "Input");
         if (citContribution > 0) payroll.addExtraComponent("CIT Contribution", citContribution, "DEDUCTION", "MANUAL", "Input");
 
-        // DYNAMIC ADJUSTMENTS (FROM ADJUSTMENT PAGE)
+        // 5. PROCESS DYNAMIC ADJUSTMENTS
         double dynamicEarnings = 0.0;
         double dynamicDeductions = 0.0;
         if (payload.get("extraComponents") instanceof List<?> extras) {
@@ -230,10 +260,12 @@ public class PayrollServiceImpl implements PayrollService {
             }
         }
 
-        double totalAllowances = dearnessAmt + earnedHra + dynamicEarnings;
-        double monthlyGross = actualBasicEarned + totalAllowances + festivalBonus + otherBonuses;
+        // 6. TOTALS & TAXATION
+        double totalAllowances = dearnessAmt + calculatedHra + dynamicEarnings;
+        double monthlyGross = finalEarnedSalary + totalAllowances + festivalBonus + otherBonuses;
         double taxableMonthly = monthlyGross - (ssfContribution + citContribution);
-        double annualTax = calculateNepalTax(taxableMonthly * 12, employee.getMaritalStatus(), ssfContribution > 0);
+
+        double annualTax = calculateNepalTax(taxableMonthly * 12, employee.getMaritalStatus(), isEnrolled);
         double monthlyTax = round(annualTax / 12);
 
         payroll.setTotalAllowances(round(totalAllowances));
@@ -247,23 +279,30 @@ public class PayrollServiceImpl implements PayrollService {
         double totalDeductions = ssfContribution + citContribution + monthlyTax + dynamicDeductions;
         payroll.setTotalDeductions(round(totalDeductions));
         payroll.setNetSalary(round(monthlyGross - totalDeductions));
-        payroll.setRemarks(String.format("Worked Days: %.1f/%d", totalPaidDays, totalDaysInMonth));
+
+        String remarkSource = (payload.get("earnedSalary") != null) ? "Manual Entry" : "Attendance Based";
+        String ssfNote = isEnrolled ? "SSF Enrolled (Tax-Free 1st Slab)" : "Unenrolled (1% Social Security Tax)";
+        payroll.setRemarks(String.format("Basis: %s | %s", remarkSource, ssfNote));
 
         return payroll;
     }
-
-    // ... (rest of the helper methods: calculateNepalTax, countAttendanceDaysInternal, etc., remain exactly as they were) ...
 
     private double calculateNepalTax(double annualTaxable, String status, boolean isSsfEnrolled) {
         if (annualTaxable <= 0) return 0.0;
         List<TaxSlab> slabs = taxSlabRepo.findByTaxpayerStatusOrderByMinAmountAsc(status);
         double totalTax = 0.0;
+
         for (TaxSlab slab : slabs) {
             double prevLimit = slab.getPreviousLimit();
             if (annualTaxable > prevLimit) {
                 double bucket = Math.min(annualTaxable, slab.getMaxAmount()) - prevLimit;
                 if (bucket > 0) {
-                    double rate = (slab.getMinAmount() == 0 && isSsfEnrolled) ? 0.0 : (slab.getRatePercentage() / 100.0);
+                    double rate;
+                    if (slab.getMinAmount() == 0 && isSsfEnrolled) {
+                        rate = 0.0;
+                    } else {
+                        rate = (slab.getRatePercentage() / 100.0);
+                    }
                     totalTax += bucket * rate;
                 }
             }

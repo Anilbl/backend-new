@@ -1,8 +1,7 @@
 package np.edu.nast.payroll.Payroll.controller;
 
 import np.edu.nast.payroll.Payroll.repository.AttendanceRepository;
-import np.edu.nast.payroll.Payroll.repository.EmployeeLeaveRepository;
-import np.edu.nast.payroll.Payroll.repository.EmployeeRepository;
+import np.edu.nast.payroll.Payroll.repository.LeaveBalanceRepository; // Need this
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,10 +18,7 @@ public class EmployeeDashboardController {
     private AttendanceRepository attendanceRepository;
 
     @Autowired
-    private EmployeeLeaveRepository leaveRepository;
-
-    @Autowired
-    private EmployeeRepository employeeRepository;
+    private LeaveBalanceRepository leaveBalanceRepository; // Autowire the balance repo
 
     @GetMapping("/stats/{empId}")
     public Map<String, Object> getEmployeeDashboardStats(@PathVariable Integer empId) {
@@ -37,20 +33,22 @@ public class EmployeeDashboardController {
                     now.withDayOfMonth(daysInMonth)
             );
 
-            double percentage = ((double) daysPresent / daysInMonth) * 100;
+            double percentage = (daysInMonth > 0) ? ((double) daysPresent / daysInMonth) * 100 : 0;
             stats.put("attendance", Math.round(percentage * 10.0) / 10.0 + "%");
 
-            // 2. Fetch Leave Balance (Pending/Approved total for current month)
-            long leaveCount = leaveRepository.countByEmployeeEmpIdAndStatus(empId, "APPROVED");
-            stats.put("leaveBalance", leaveCount + " Days");
+            // 2. Fetch SUM of currentBalanceDays from LeaveBalance table
+            // This matches the "Total Available Quota" logic in your LeaveManagement.js
+            Integer totalAvailableQuota = leaveBalanceRepository.sumCurrentBalanceByEmployeeId(empId);
 
-            // 3. Placeholder for Net Salary (Can be linked to PayrollRepository later)
+            stats.put("remainingLeaves", totalAvailableQuota != null ? totalAvailableQuota : 0);
+
+            // 3. Placeholder for Net Salary
             stats.put("netSalary", "Rs. 0");
 
         } catch (Exception e) {
             e.printStackTrace();
             stats.put("attendance", "0.0%");
-            stats.put("leaveBalance", "0 Days");
+            stats.put("remainingLeaves", 0);
             stats.put("netSalary", "Rs. 0");
         }
         return stats;

@@ -54,6 +54,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
      */
     Optional<Employee> findByUser_Username(String username);
 
+    long countByIsActiveTrue();
     /**
      * Search functionality for the Admin Employee list.
      */

@@ -103,8 +103,11 @@ public class Employee {
     @Column(name = "email_notifications")
     private Boolean emailNotifications = false;
 
-    @Column(name = "photo_url")
+    @Column(name = "photo_url", nullable = false)
     private String photoUrl;
+
+    @Column(name = "is_ssf_enrolled", nullable = false)
+    private Boolean isSsfEnrolled = false; // Default to false
 
     @PrePersist
     public void onCreate() {

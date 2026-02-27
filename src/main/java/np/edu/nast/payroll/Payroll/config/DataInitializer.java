@@ -61,7 +61,6 @@ public class DataInitializer implements CommandLineRunner {
                     .email(clientEmail)
                     .password(passwordEncoder.encode(rawPassword))
                     .role(adminRole)
-                    .status("ACTIVE")
                     .isFirstLogin(true)
                     .createdAt(LocalDateTime.now())
                     .build();
