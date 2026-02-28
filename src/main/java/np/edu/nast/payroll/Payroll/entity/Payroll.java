@@ -1,8 +1,10 @@
 package np.edu.nast.payroll.Payroll.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -14,7 +16,11 @@ import java.util.List;
         @Index(name = "idx_payroll_pay_date", columnList = "pay_date"),
         @Index(name = "idx_payroll_pay_group", columnList = "pay_group_id")
 })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Payroll {
 
     @Id
@@ -117,11 +123,12 @@ public class Payroll {
 
     @Column(name = "currency_code")
     private String currencyCode;
-
     @Column(name = "pay_date")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate payDate;
 
     @Column(name = "pay_period_start")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate payPeriodStart;
 
     @Column(name = "pay_period_end")
@@ -141,6 +148,7 @@ public class Payroll {
 
     @OneToMany(mappedBy = "payroll", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PayoutInfo> payouts = new ArrayList<>();
+
     // 2. Add this helper method inside the class body
     public void addExtraComponent(String name, Double amount, String type, String calcType, String desc) {
         if (this.extraComponents == null) this.extraComponents = new ArrayList<>();

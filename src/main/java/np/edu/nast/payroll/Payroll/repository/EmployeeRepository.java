@@ -12,13 +12,28 @@ import java.util.Optional;
 @Repository
 public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
-    // Add this line to resolve the error
+    /**
+     * Standard derived method to fetch active employees for dropdowns or simple lists.
+     */
     List<Employee> findByIsActiveTrue();
-    // Custom query to only fetch active employees
+
+    /**
+     * Custom query used by the Payroll engine to ensure only currently
+     * employed staff are processed for salary.
+     */
     @Query("SELECT e FROM Employee e WHERE e.isActive = true")
     List<Employee> findAllActive();
+
     /**
-     * Analytical query for employee growth chart.
+     * CRITICAL FOR ATTENDANCE:
+     * Identifies the Employee record associated with a specific User login ID.
+     */
+    @Query("SELECT e FROM Employee e WHERE e.user.userId = :userId")
+    Optional<Employee> findByUser_UserId(@Param("userId") Integer userId);
+
+    /**
+     * Analytical query for employee growth chart (Admin Dashboard).
+     * Groups active employees by their joining month.
      */
     @Query("""
         SELECT FUNCTION('MONTH', e.joiningDate), COUNT(e)
@@ -29,34 +44,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
     List<Object[]> countActiveEmployeesPerMonth();
 
     /**
-     * Basic exists check for validation.
-     */
-    boolean existsByEmail(String email);
-
-    /**
-     * Standard find by email used in AuthServiceImpl to link User to Employee.
-     */
-    Optional<Employee> findByEmail(String email);
-
-    /**
-     * Look up employee via the nested User entity's email.
-     */
-    Optional<Employee> findByUser_Email(String email);
-
-    /**
-     * Explicit Query to find employee by User ID.
-     */
-    @Query("SELECT e FROM Employee e WHERE e.user.userId = :userId")
-    Optional<Employee> findByUser_UserId(@Param("userId") Integer userId);
-
-    /**
-     * Look up employee via the nested User entity's username.
-     */
-    Optional<Employee> findByUser_Username(String username);
-
-    long countByIsActiveTrue();
-    /**
      * Search functionality for the Admin Employee list.
+     * Matches against ID (as String) or Name (Case-Insensitive).
      */
     @Query("""
         SELECT e FROM Employee e
@@ -65,4 +54,21 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
            OR LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%'))
     """)
     List<Employee> searchByIdOrName(@Param("query") String query);
+
+    /**
+     * AUTHENTICATION & LINKING HELPERS
+     */
+    Optional<Employee> findByEmail(String email);
+
+    boolean existsByEmail(String email);
+
+    Optional<Employee> findByUser_Email(String email);
+
+    Optional<Employee> findByUser_Username(String username);
+
+
+    /**
+     * Statistics for Dashboard Cards
+     */
+    long countByIsActiveTrue();
 }

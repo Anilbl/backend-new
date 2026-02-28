@@ -41,9 +41,9 @@ public class DataInitializer implements CommandLineRunner {
             // --- CONFIGURATION ---
             String clientEmail = "blanil928@gmail.com";
             String username = "superadmin";
-            String rawPassword = UUID.randomUUID().toString().substring(0, 8); // Generate random 8-char password
+            String rawPassword = UUID.randomUUID().toString().substring(0, 8);
 
-            // 3. Create mandatory Department and Designation (to satisfy foreign key constraints)
+            // 3. Create mandatory Department and Designation
             Department defaultDept = departmentRepository.findByDeptName("Administration")
                     .orElseGet(() -> departmentRepository.save(Department.builder()
                             .deptName("Administration")
@@ -62,16 +62,19 @@ public class DataInitializer implements CommandLineRunner {
                     .password(passwordEncoder.encode(rawPassword))
                     .role(adminRole)
                     .isFirstLogin(true)
+                    .isActive(true) // Ensure the user is active
                     .createdAt(LocalDateTime.now())
                     .build();
 
             User savedUser = userRepository.save(adminUser);
 
-            // 5. Create the linked Employee with mandatory fields
+            // 5. Create the linked Employee with ALL mandatory fields
+            // The error "Column 'is_ssf_enrolled' cannot be null" is fixed here
             Employee adminEmployee = Employee.builder()
                     .user(savedUser)
                     .firstName("System")
                     .lastName("Administrator")
+                    .gender("OTHER")              // Added: Mandatory column
                     .email(clientEmail)
                     .contact("9800000000")
                     .address("Central Office")
@@ -82,9 +85,11 @@ public class DataInitializer implements CommandLineRunner {
                     .createdAt(LocalDateTime.now())
                     .employmentStatus("PERMANENT")
                     .maritalStatus("N/A")
-                    // 🔥 These two lines fix your 'dept_id' cannot be null error
                     .department(defaultDept)
                     .position(defaultDesignation)
+                    .photoUrl("default-profile.png") // Added: Mandatory column
+                    .isSsfEnrolled(false)           // Added: Fixes your specific SQL error
+                    .emailNotifications(true)
                     .build();
 
             employeeRepository.save(adminEmployee);
@@ -103,7 +108,7 @@ public class DataInitializer implements CommandLineRunner {
                 System.out.println(">> SYSTEM INITIALIZED SUCCESSFULLY");
                 System.out.println(">> Admin Username: " + username);
                 System.out.println(">> Admin Email: " + clientEmail);
-                System.out.println(">> Temporary Password: " + rawPassword); // Also printed in console for backup
+                System.out.println(">> Temporary Password: " + rawPassword);
                 System.out.println("--------------------------------------------------");
             } catch (Exception e) {
                 System.err.println(">> DATA INITIALIZED BUT EMAIL FAILED: " + e.getMessage());

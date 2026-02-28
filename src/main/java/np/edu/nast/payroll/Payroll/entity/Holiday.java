@@ -20,9 +20,12 @@ public class Holiday {
     @Column(name = "holiday_date", nullable = false)
     private LocalDate holidayDate;
 
+    @Column(name = "holiday_name", nullable = false) // Added for user-friendly error messages
+    private String holidayName;
+
     @Column(name = "description", nullable = false)
     private String description;
 
     @Column(name = "holiday_type", nullable = false)
-    private String holidayType; // "NATIONAL", "LOCAL", "WEEKEND", "URGENT"
+    private String holidayType; // e.g., "NATIONAL", "PUBLIC", "FESTIVAL"
 }

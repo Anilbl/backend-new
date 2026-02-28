@@ -30,11 +30,16 @@ public class HolidayServiceImpl implements HolidayService {
             if (apiHolidays != null) {
                 for (HolidayResponse res : apiHolidays) {
                     LocalDate holidayDate = LocalDate.parse(res.getDate());
-                    // API sync usually includes future dates; we permit this but skip existing
                     if (!holidayRepository.existsByHolidayDate(holidayDate)) {
                         Holiday h = new Holiday();
                         h.setHolidayDate(holidayDate);
-                        h.setDescription(res.getLocalName() != null ? res.getLocalName() : res.getName());
+
+                        // Map API names to holidayName
+                        String name = res.getLocalName() != null ? res.getLocalName() : res.getName();
+                        h.setHolidayName(name);
+
+                        // Description is now null
+                        h.setDescription(null);
                         h.setHolidayType("NATIONAL");
                         holidayRepository.save(h);
                     }
@@ -50,12 +55,12 @@ public class HolidayServiceImpl implements HolidayService {
     public void generateSaturdaysForMonth(int year, int month) {
         LocalDate date = LocalDate.of(year, month, 1);
         while (date.getMonthValue() == month) {
-            // Logic: Only generate for future Saturdays or today
-            if (date.getDayOfWeek() == DayOfWeek.SATURDAY && !date.isBefore(LocalDate.now())) {
+            if (date.getDayOfWeek() == DayOfWeek.SATURDAY) {
                 if (!holidayRepository.existsByHolidayDate(date)) {
                     Holiday sat = new Holiday();
                     sat.setHolidayDate(date);
-                    sat.setDescription("Weekly Holiday (Saturday)");
+                    sat.setHolidayName("Saturday");
+                    sat.setDescription(null); // Description set to null
                     sat.setHolidayType("WEEKEND");
                     holidayRepository.save(sat);
                 }
@@ -66,31 +71,39 @@ public class HolidayServiceImpl implements HolidayService {
 
     @Override
     public Holiday saveHoliday(Holiday holiday) {
-        // Validation: No past dates
         if (holiday.getHolidayDate().isBefore(LocalDate.now())) {
             throw new IllegalArgumentException("Cannot create a holiday for a past date.");
         }
         if (holidayRepository.existsByHolidayDate(holiday.getHolidayDate())) {
             throw new RuntimeException("A holiday is already set for " + holiday.getHolidayDate());
         }
+
+        // Use holidayName from request, fallback if null
+        if (holiday.getHolidayName() == null || holiday.getHolidayName().isEmpty()) {
+            holiday.setHolidayName("Custom Holiday");
+        }
+
+        // Ensure description is not saved
+        holiday.setDescription(null);
+
         return holidayRepository.save(holiday);
     }
 
     @Override
-    public void saveHolidayRange(LocalDate start, LocalDate end, String description, String type) {
-        if (start.isBefore(LocalDate.now())) {
-            throw new IllegalArgumentException("Start date cannot be in the past.");
-        }
-        if (end.isBefore(start)) {
-            throw new IllegalArgumentException("End date must be after start date.");
-        }
+    public void saveHolidayRange(LocalDate start, LocalDate end, String holidayName, String type) {
+        if (start.isBefore(LocalDate.now())) throw new IllegalArgumentException("Start date cannot be in the past.");
+        if (end.isBefore(start)) throw new IllegalArgumentException("End date must be after start date.");
 
         LocalDate current = start;
         while (!current.isAfter(end)) {
-            if (!holidayRepository.existsByHolidayDate(current)) {
+            // Check: Don't save if it's a Saturday OR if the holiday already exists
+            boolean isSaturday = current.getDayOfWeek() == DayOfWeek.SATURDAY;
+
+            if (!isSaturday && !holidayRepository.existsByHolidayDate(current)) {
                 Holiday h = new Holiday();
                 h.setHolidayDate(current);
-                h.setDescription(description);
+                h.setHolidayName(holidayName); // Description param from controller maps to Name
+                h.setDescription(null);        // Description is null
                 h.setHolidayType(type != null ? type : "NATIONAL");
                 holidayRepository.save(h);
             }

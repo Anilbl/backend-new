@@ -88,7 +88,7 @@ public class SecurityConfig {
                         .hasAnyAuthority("ADMIN", "ACCOUNTANT", "ROLE_ADMIN", "ROLE_ACCOUNTANT")
 
                         /* 4. ATTENDANCE & LEAVES (Specific methods first) */
-                        .requestMatchers(HttpMethod.POST, "/api/attendance/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "EMPLOYEE", "ROLE_EMPLOYEE")
+                        .requestMatchers(HttpMethod.POST, "/api/attendance/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "EMPLOYEE", "ROLE_EMPLOYEE","ACCOUNTANT","ROLE_ACCOUNTANT")
                         .requestMatchers("/api/attendance/**", "/api/employee-leaves/**", "/api/salary-analytics/**")
                         .hasAnyAuthority("ADMIN", "ROLE_ADMIN", "ACCOUNTANT", "ROLE_ACCOUNTANT", "EMPLOYEE", "ROLE_EMPLOYEE")
 

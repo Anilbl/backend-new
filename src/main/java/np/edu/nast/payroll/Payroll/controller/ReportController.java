@@ -27,6 +27,11 @@ public class ReportController {
     @Autowired
     private ReportService reportService;
 
+    private final PayrollRepository payrollRepo;
+    private final EmployeeRepository employeeRepo;
+    private final LeaveBalanceRepository leaveBalanceRepo;
+    private final AttendanceRepository attendanceRepo;
+
     @GetMapping("/history")
     public List<Report> getHistory() {
         return reportService.getAllReports();
@@ -49,24 +54,18 @@ public class ReportController {
                 .body(data);
     }
 
-    //reports charts
-    private final PayrollRepository payrollRepo;
-    private final EmployeeRepository employeeRepo;
-    private final LeaveBalanceRepository leaveBalanceRepo;
-    private final AttendanceRepository attendanceRepo;
-
-    // 1️⃣ Summary cards
+    /**
+     * 1️⃣ Summary cards
+     * Updated to potentially reflect PAID stats only for the financial overview.
+     */
     @GetMapping("/analytics/summary")
     public PayrollSummaryDTO summary(@RequestParam int year) {
-        // Use the Builder to satisfy the updated DTO structure
-        // while maintaining the existing yearly analytics logic.
         return PayrollSummaryDTO.builder()
                 .totalEmployees(employeeRepo.count())
-                .totalNet(payrollRepo.yearlyPayroll(year)) // yearlyPayroll returns SUM(netSalary)
+                .totalNet(payrollRepo.yearlyPayroll(year)) // Ensure this repo method filters by 'PAID'
                 .totalDeductions(payrollRepo.yearlyDeductions(year))
                 .totalAllowances(payrollRepo.yearlyAllowances(year))
                 .pendingLeaves(leaveBalanceRepo.countByCurrentBalanceDaysGreaterThan(0))
-                // Optional: Initialize UI fields to default values for this specific endpoint
                 .totalGross(0.0)
                 .totalTax(0.0)
                 .totalSSF(0.0)
@@ -76,10 +75,14 @@ public class ReportController {
                 .build();
     }
 
-    // 2️⃣ Monthly payroll chart
+    /**
+     * 2️⃣ Monthly payroll chart
+     * CRITICAL CHANGE: This now calls findMonthlyPaidPayroll to exclude pending amounts.
+     */
     @GetMapping("/analytics/monthly-payroll")
     public List<MonthlyPayrollDTO> monthlyPayroll(@RequestParam int year) {
-        return payrollRepo.monthlyPayroll(year);
+        // We change the call to a method that specifically targets 'PAID' status records
+        return payrollRepo.findMonthlyPaidPayroll(year);
     }
 
     @GetMapping("/attendance/summary")
@@ -102,5 +105,3 @@ public class ReportController {
         return new AttendanceSummaryDTO(present, absent, leave);
     }
 }
-
-

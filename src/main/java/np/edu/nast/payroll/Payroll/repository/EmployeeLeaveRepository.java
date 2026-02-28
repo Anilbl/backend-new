@@ -14,8 +14,31 @@ import java.util.List;
 public interface EmployeeLeaveRepository extends JpaRepository<EmployeeLeave, Integer> {
 
     /**
-     * NEW: Dynamic filtering for the Admin Leave Page.
-     * Searches by Year, Month, Status (with "All" support), and Search Term (Name/ID).
+     * CRITICAL FOR ATTENDANCE:
+     * Checks if today falls within an approved leave range for a specific employee.
+     */
+    boolean existsByEmployee_EmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+            Integer empId, String status, LocalDate todayForStart, LocalDate todayForEnd
+    );
+
+    /**
+     * USED FOR PAYROLL & ATTENDANCE STATS:
+     * Finds leaves that overlap with the current month/period.
+     */
+    @Query("SELECT l FROM EmployeeLeave l WHERE l.employee.empId = :empId " +
+            "AND l.status = :status " +
+            "AND l.startDate <= :periodEnd " +
+            "AND l.endDate >= :periodStart")
+    List<EmployeeLeave> findRelevantLeaves(
+            @Param("empId") Integer empId,
+            @Param("status") String status,
+            @Param("periodStart") LocalDate periodStart,
+            @Param("periodEnd") LocalDate periodEnd
+    );
+
+    /**
+     * ADMIN LEAVE FILTERING:
+     * Powers the "Manage Leaves" table with search and status filters.
      */
     @Query("SELECT l FROM EmployeeLeave l WHERE " +
             "YEAR(l.startDate) = :year AND " +
@@ -31,31 +54,18 @@ public interface EmployeeLeaveRepository extends JpaRepository<EmployeeLeave, In
             @Param("search") String search
     );
 
-    @Query("SELECT l FROM EmployeeLeave l WHERE l.employee.empId = :empId " +
-            "AND l.status = :status " +
-            "AND l.startDate <= :periodEnd " +
-            "AND l.endDate >= :periodStart")
-    List<EmployeeLeave> findRelevantLeaves(
-            @Param("empId") Integer empId,
-            @Param("status") String status,
-            @Param("periodStart") LocalDate periodStart,
-            @Param("periodEnd") LocalDate periodEnd
-    );
+    /**
+     * Fix for "Cannot resolve method 'findAllByEmployee'"
+     * This version takes the full Employee entity object.
+     */
+    List<EmployeeLeave> findAllByEmployee(Employee employee);
 
     /**
-     * NEW: Checks if an employee is currently on an approved leave.
-     * Logic: startDate <= today AND endDate >= today
+     * Standard lookup by Employee ID.
      */
-    boolean existsByEmployee_EmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
-            Integer empId, String status, LocalDate todayForStart, LocalDate todayForEnd
-    );
-
-    List<EmployeeLeave> findByEmployeeEmpIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
-            Integer empId, String status, LocalDate periodEnd, LocalDate periodStart
-    );
-
     List<EmployeeLeave> findByEmployee_EmpId(Integer empId);
-    List<EmployeeLeave> findAllByEmployee(Employee employee);
+
     long countByEmployeeEmpIdAndStatus(Integer empId, String status);
+
     long countByStatus(String status);
 }

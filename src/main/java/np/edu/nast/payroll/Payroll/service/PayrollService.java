@@ -1,6 +1,7 @@
 package np.edu.nast.payroll.Payroll.service;
 
 import np.edu.nast.payroll.Payroll.dto.CommandCenterDTO;
+import np.edu.nast.payroll.Payroll.dto.EmployeePayrollHistoryDTO;
 import np.edu.nast.payroll.Payroll.dto.PayrollDashboardDTO;
 import np.edu.nast.payroll.Payroll.entity.Payroll;
 import np.edu.nast.payroll.Payroll.reportdto.PayrollSummaryDTO;
@@ -18,13 +19,14 @@ public interface PayrollService {
     void rollbackPayroll(Integer payrollId);
 
     // Fetching & Queries
-    List<Payroll> getPayrollByEmployeeId(Integer empId);
+    // Use this as the main history fetcher for the React Audit Modal
+    List<EmployeePayrollHistoryDTO> getPayrollByEmployeeId(Integer empId);
+
     Payroll updateStatus(Integer id, String status);
     Payroll voidPayroll(Integer id);
     Payroll getPayrollById(Integer id);
 
     // Dashboard & Command Center Logic
-    // Changed month to String to support both "January" or "1" as per your parseMonthValue logic
     List<PayrollDashboardDTO> getBatchCalculation(String month, int year);
     PayrollSummaryDTO getSalarySummary(int month, int year);
     CommandCenterDTO getCommandCenterData(int month, int year);
